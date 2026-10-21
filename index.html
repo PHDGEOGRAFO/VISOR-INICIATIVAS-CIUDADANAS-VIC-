@@ -81,4 +81,41 @@ $('descargarCSV').onclick=()=>{const cols=['id','fecha','titulo','categoria','de
 $('descargarGeo').onclick=()=>saveFile('iniciativas_demo.geojson',JSON.stringify({type:'FeatureCollection',features:registros.map(r=>({type:'Feature',geometry:r.geometry,properties:{id:r.id,fecha:r.fecha,titulo:r.titulo,categoria:r.categoria,descripcion:r.descripcion,barrios:r.barrios,barrio_declarado:r.barrio_declarado}}))},null,2),'application/geo+json');
 $('adminBtn').onclick=()=>{$('claveAdmin').value='';$('adminError').textContent='';$('adminLogin').showModal()};$('cancelarAdmin').onclick=()=>$('adminLogin').close();$('validarAdmin').onclick=()=>{if($('claveAdmin').value==='Stgogis'){$('adminLogin').close();render();$('adminPanel').showModal()}else $('adminError').textContent='Clave incorrecta'};$('cerrarAdmin').onclick=()=>$('adminPanel').close();$('descargarMatch').onclick=()=>saveFile('match_matriz_v03.json',JSON.stringify(window.MATCH_V03,null,2),'application/json');
 $('vaciar').onclick=()=>{if(confirm('¿Eliminar todas las iniciativas de prueba de este navegador?')){registros=[];persist()}};render();
+</script><script>
+/* Cruce PDT: listado consolidado con nombres, códigos y ejes; no sustituye la capa geográfica original */
+(async function(){
+ const target=document.getElementById('match');
+ let records=[];
+ try{
+  const res=await fetch('./pdt-proyectos-listado.json',{cache:'no-store'});
+  if(!res.ok)throw Error('HTTP '+res.status);
+  const doc=await res.json();records=doc.items||[];
+  target.textContent='Base PDT consolidada conectada: '+records.length+' proyectos con código y eje. Selecciona un lugar y describe tu idea para consultar coincidencias.';
+ }catch(e){target.textContent='No se pudo cargar el listado de proyectos PDT: '+e.message;return}
+ const norm=s=>String(s||'').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+ const omit=new Set('para esta este estas estos hacer como donde barrio comuna santiago ciudad proyecto iniciativas iniciativa implementar desarrollo realizar mediante municipal vecinal centro nueva nuevo mejorar sobre desde entre'.split(' '));
+ const words=s=>new Set(norm(s).split(' ').filter(t=>t.length>=4&&!omit.has(t)));
+ document.getElementById('matchBtn').onclick=function(){
+  if(!active){target.textContent='Dibuja primero la ubicación de tu propuesta.';return}
+  const q=words([document.getElementById('titulo').value,document.getElementById('descripcion').value,document.getElementById('categoria').value].join(' '));
+  if(q.size===0){target.textContent='Escribe el nombre y descripción antes de consultar.';return}
+  const barrio=norm(document.getElementById('barrioVecino').value);
+  const found=records.map(r=>{
+   let w=words([r.nombre,r.descripcion,r.eje,r.dimension].join(' '));
+   let overlap=0;for(const v of q)if(w.has(v))overlap++;
+   const topic=overlap/Math.max(1,q.size),spatial=barrio&&norm(r.barrio).includes(barrio)?0.15:0;
+   return {r,topic,score:topic+spatial};
+  }).filter(v=>v.topic>0).sort((a,b)=>b.score-a.score).slice(0,6);
+  target.replaceChildren();
+  let head=document.createElement('b');head.textContent='MATCH PDT · '+records.length+' proyectos del listado consolidado';target.appendChild(head);
+  if(!found.length){let p=document.createElement('p');p.textContent='No se encontraron coincidencias textuales claras. La idea puede enviarse de todas formas.';target.appendChild(p)}
+  found.forEach(({r,topic})=>{
+   let p=document.createElement('p');p.style.cssText='padding:8px;background:white;border:1px solid #d8e5df;border-radius:6px';
+   let strong=document.createElement('strong');strong.textContent=r.nombre;p.appendChild(strong);
+   let detail=document.createElement('div');detail.style.fontSize='12px';detail.textContent=(r.codigo||'Código pendiente')+' · '+r.sector+' · '+r.barrio+' · '+r.dimension+' / '+r.eje;p.appendChild(detail);
+   let score=document.createElement('small');score.textContent='Similitud de palabras de la propuesta: '+Math.round(topic*100)+'%';p.appendChild(score);target.appendChild(p);
+  });
+  let note=document.createElement('small');note.textContent='Resultado exploratorio. Listado PDT y capa geográfica de 307 iniciativas son fuentes distintas; su vinculación registro a registro sigue pendiente.';target.appendChild(note);
+ };
+})();
 </script></body></html>
